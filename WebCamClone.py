@@ -7,7 +7,7 @@ class WebCamClone:
         self.height = height
         self.fps = fps
         self.video_path = video_path
-        self.cam = pyvirtualcam.Camera(width=self.width, height=self.height, fps=self.fps, device='Webcam Clone7')
+        self.cam = pyvirtualcam.Camera(width=self.width, height=self.height, fps=self.fps, device='Webcam Clone')
         self.cap = cv2.VideoCapture(0)
         self.video = cv2.VideoCapture(self.video_path)
         self.use_webcam = True
