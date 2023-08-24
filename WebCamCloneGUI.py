@@ -20,8 +20,8 @@ class WebCamCloneGUI:
         self.bottom_frame = tk.Frame(master)
         self.bottom_frame.pack(pady=10)
 
-        self.real_feed_button = tk.Button(self.top_frame, text="Real Feed", command=self.switch_to_webcam, width=15, height=2)
-        self.real_feed_button.pack(side=tk.LEFT, padx=5)
+        self.live_feed_button = tk.Button(self.top_frame, text="Live Feed", command=self.switch_to_webcam, width=15, height=2)
+        self.live_feed_button.pack(side=tk.LEFT, padx=5)
 
         self.virtual_feed_button = tk.Button(self.top_frame, text="Virtual Feed", command=self.switch_to_video, state=tk.DISABLED, width=15, height=2)
         self.virtual_feed_button.pack(side=tk.LEFT, padx=5)
@@ -32,11 +32,11 @@ class WebCamCloneGUI:
         self.stop_record_button = tk.Button(self.middle_frame, text="Stop Recording", command=self.stop_recording, state=tk.DISABLED, width=15, height=2)
         self.stop_record_button.pack(side=tk.LEFT, padx=5)
 
-        self.selected_file_entry = tk.Label(self.bottom_frame, text="No Video Selected", state=tk.NORMAL)
+        self.selected_file_entry = tk.Label(self.bottom_frame, text="No Video File Selected", state=tk.NORMAL)
         self.selected_file_entry.pack(side=tk.TOP, padx=5, pady=5)
 
-        self.select_button = tk.Button(self.bottom_frame, text="Select Video File", command=self.select_file, state=tk.DISABLED)
-        self.select_button.pack(side=tk.BOTTOM)
+        self.select_button = tk.Button(self.bottom_frame, text="Select Video File", command=self.select_file, state=tk.DISABLED, width=30, height=2)
+        self.select_button.pack(side=tk.BOTTOM, padx=5)
 
         master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -64,14 +64,15 @@ class WebCamCloneGUI:
             filename = filedialog.asksaveasfilename(defaultextension=".mp4")
             if filename:
                 self.vc.start_recording(filename)
-                self.record_button.config(state=tk.DISABLED)
+                self.record_button.config(state=tk.DISABLED, text="Recording...")
                 self.stop_record_button.config(state=tk.NORMAL)
 
     def stop_recording(self):
         if self.vc is not None:
             self.vc.stop_recording()
-            self.record_button.config(state=tk.NORMAL)
+            self.record_button.config(state=tk.NORMAL, text="Start Recording")
             self.stop_record_button.config(state=tk.DISABLED)
+
 
     def select_file(self):
         if self.vc is not None:
