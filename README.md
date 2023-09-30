@@ -31,4 +31,4 @@ python WebCamCloneGUI.py
 We welcome contributions from developers around the world. If you have an idea for a new feature or improvement, please feel free to submit a pull request or open an issue on our GitHub repository.
 
 ## License
-Webcam Clone is available under the MIT license. See the `LICENSE` file for more information.
+Webcam Clone is available under the GPL-3.0 license license. See the `LICENSE` file for more information.
