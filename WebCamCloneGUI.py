@@ -53,7 +53,7 @@ class WebCamCloneGUI:
         self.live_feed_button = tk.Button(self.top_frame, text="Live Feed", command=self.switch_to_webcam, width=15, height=2)
         self.live_feed_button.pack(side=tk.LEFT, padx=5)
 
-        self.virtual_feed_button = tk.Button(self.top_frame, text="Virtual Feed", command=self.switch_to_video, state=tk.DISABLED, width=15, height=2)
+        self.virtual_feed_button = tk.Button(self.top_frame, text="Virtual Feed", command=self.validate_and_switch_to_video, state=tk.DISABLED, width=15, height=2)
         self.virtual_feed_button.pack(side=tk.LEFT, padx=5)
 
         self.record_button = tk.Button(self.middle_frame, text="Start Recording", command=self.start_recording, state=tk.DISABLED, width=15, height=2)
@@ -67,6 +67,16 @@ class WebCamCloneGUI:
 
         self.status_label = tk.Label(self.bottom_frame, text="Ready", fg="green", font=("Arial", 10, "bold"))
         self.status_label.pack(side=tk.TOP, padx=5, pady=2)
+        
+        # Instructions label
+        self.instructions_label = tk.Label(self.bottom_frame, text="Instructions: Start Live Feed → Select Video File → Switch to Virtual Feed", 
+                                         font=("Arial", 8), fg="gray", wraplength=300)
+        self.instructions_label.pack(side=tk.TOP, padx=5, pady=2)
+        
+        # Recording info label
+        self.recording_info_label = tk.Label(self.bottom_frame, text="Recording: Records whatever is currently being broadcast to virtual camera", 
+                                           font=("Arial", 8), fg="purple", wraplength=300)
+        self.recording_info_label.pack(side=tk.TOP, padx=5, pady=2)
 
         self.select_button = tk.Button(self.bottom_frame, text="Select Video File", command=self.select_file, state=tk.DISABLED, width=30, height=2)
         self.select_button.pack(side=tk.BOTTOM, padx=5)
@@ -110,7 +120,9 @@ class WebCamCloneGUI:
     
     def on_feed_started_callback(self):
         """Called when the feed actually starts"""
-        self.status_label.config(text="Live Feed Active", fg="green")
+        self.status_label.config(text="Live Feed Active - Virtual Camera Ready!", fg="green")
+        self.instructions_label.config(text="✓ Live feed is now broadcasting to 'Webcam Clone' virtual camera. You can select a video file to switch to virtual feed.")
+        self.recording_info_label.config(text="Recording: Will record the camera feed being broadcast")
         # Start preview display
         self.start_preview()
 
@@ -125,33 +137,85 @@ class WebCamCloneGUI:
                 self.status_label.config(text="Switching to Live Feed...", fg="orange")
                 self.master.update()
                 self.vc.switch_to_webcam()
-                self.status_label.config(text="Live Feed Active", fg="green")
+                self.status_label.config(text="Live Feed Active - Camera Broadcasting!", fg="green")
+                self.instructions_label.config(text="✓ Live feed is now broadcasting your camera to 'Webcam Clone' virtual camera.")
+                self.recording_info_label.config(text="Recording: Will record the camera feed being broadcast")
             except Exception as e:
                 print(f"Error switching to webcam: {e}")
                 self.status_label.config(text="Error", fg="red")
                 tk.messagebox.showerror("Error", f"Failed to switch to webcam: {e}")
 
+    def validate_and_switch_to_video(self):
+        """Validate prerequisites before switching to virtual feed"""
+        if self.vc is None:
+            tk.messagebox.showwarning("No Live Feed", 
+                "Please start the Live Feed first before switching to virtual feed.\n\n"
+                "Steps:\n"
+                "1. Click 'Live Feed' button\n"
+                "2. Wait for 'Virtual Camera Ready' message\n"
+                "3. Select a video file\n"
+                "4. Then click 'Virtual Feed'")
+            return
+        
+        # Check if video file is selected
+        if not hasattr(self.vc, 'video') or self.vc.video is None:
+            tk.messagebox.showwarning("No Video File Selected", 
+                "Please select a video file first before switching to virtual feed.\n\n"
+                "Steps:\n"
+                "1. Click 'Select Video File' button\n"
+                "2. Choose your video file\n"
+                "3. Then click 'Virtual Feed'\n\n"
+                "The video file will be broadcast to the 'Webcam Clone' virtual camera.")
+            return
+        
+        # All validations passed, proceed with switching
+        self.switch_to_video()
+    
     def switch_to_video(self):
-        if self.vc is not None:
-            try:
-                self.vc.switch_to_video()
-                self.status_label.config(text="Virtual Feed Active", fg="blue")
-            except Exception as e:
-                print(f"Error switching to video: {e}")
-                tk.messagebox.showerror("Error", f"Failed to switch to video: {e}")
+        """Switch to video feed (called after validation)"""
+        try:
+            self.vc.switch_to_video()
+            self.status_label.config(text="Virtual Feed Active - Video Broadcasting!", fg="blue")
+            self.instructions_label.config(text="✓ Virtual feed is now broadcasting your video file to 'Webcam Clone' virtual camera.")
+            self.recording_info_label.config(text="Recording: Will record the video file being broadcast")
+        except Exception as e:
+            print(f"Error switching to video: {e}")
+            tk.messagebox.showerror("Error", f"Failed to switch to video: {e}")
 
     def start_recording(self):
         if self.vc is not None:
-            filename = filedialog.asksaveasfilename(defaultextension=".mp4")
+            # Check if any feed is active
+            if not self.is_feed_active():
+                tk.messagebox.showwarning("No Active Feed", 
+                    "Please start a feed before recording.\n\n"
+                    "Steps:\n"
+                    "1. Click 'Live Feed' to start camera feed, OR\n"
+                    "2. Click 'Virtual Feed' to start video file feed\n"
+                    "3. Then click 'Start Recording'")
+                return
+            
+            filename = filedialog.asksaveasfilename(
+                title="Save Recording As",
+                defaultextension=".mp4",
+                filetypes=[("MP4 files", "*.mp4"), ("All files", "*.*")]
+            )
             if filename:
                 try:
                     self.vc.start_recording(filename)
                     self.record_button.config(state=tk.DISABLED, text="Recording...")
                     self.stop_record_button.config(state=tk.NORMAL)
-                    self.status_label.config(text="Recording...", fg="red")
+                    self.status_label.config(text="Recording Active - Saving to file!", fg="red")
+                    self.recording_info_label.config(text=f"✓ Recording: {filename.split('/')[-1]} - Records current broadcast")
                 except Exception as e:
                     print(f"Error starting recording: {e}")
                     tk.messagebox.showerror("Error", f"Failed to start recording: {e}")
+        else:
+            tk.messagebox.showwarning("No Feed Started", 
+                "Please start a feed first before recording.\n\n"
+                "Steps:\n"
+                "1. Click 'Live Feed' button\n"
+                "2. Wait for 'Virtual Camera Ready' message\n"
+                "3. Then click 'Start Recording'")
 
     def stop_recording(self):
         if self.vc is not None:
@@ -159,10 +223,18 @@ class WebCamCloneGUI:
                 self.vc.stop_recording()
                 self.record_button.config(state=tk.NORMAL, text="Start Recording")
                 self.stop_record_button.config(state=tk.DISABLED)
-                self.status_label.config(text="Recording Stopped", fg="orange")
+                self.status_label.config(text="Recording Stopped - File Saved!", fg="orange")
+                self.recording_info_label.config(text="✓ Recording completed and saved to file")
             except Exception as e:
                 print(f"Error stopping recording: {e}")
                 tk.messagebox.showerror("Error", f"Failed to stop recording: {e}")
+    
+    def is_feed_active(self):
+        """Check if any feed is currently active"""
+        if self.vc is None:
+            return False
+        # Check if we're using webcam or video
+        return (self.vc.use_webcam and self.vc.cap is not None) or (not self.vc.use_webcam and self.vc.video is not None)
 
 
     def select_file(self):
@@ -173,11 +245,28 @@ class WebCamCloneGUI:
             )
             if filename:
                 try:
-                    self.selected_file_entry.config(text=filename)
+                    # Show loading status
+                    self.status_label.config(text="Loading video file...", fg="orange")
+                    self.master.update()
+                    
                     self.vc.set_video_path(filename)
+                    
+                    # Update UI with success
+                    self.selected_file_entry.config(text=f"✓ {filename.split('/')[-1]}")
+                    self.status_label.config(text="Video file loaded successfully!", fg="green")
+                    self.instructions_label.config(text="✓ Video file loaded! You can now click 'Virtual Feed' to broadcast this video.")
+                    
                 except Exception as e:
                     print(f"Error setting video path: {e}")
+                    self.status_label.config(text="Error loading video", fg="red")
                     tk.messagebox.showerror("Error", f"Failed to load video file: {e}")
+        else:
+            tk.messagebox.showwarning("No Live Feed", 
+                "Please start the Live Feed first before selecting a video file.\n\n"
+                "Steps:\n"
+                "1. Click 'Live Feed' button\n"
+                "2. Wait for 'Virtual Camera Ready' message\n"
+                "3. Then select your video file")
 
     def start_preview(self):
         """Start the preview display thread"""
