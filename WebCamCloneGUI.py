@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from threading import Thread
+import cv2
+from PIL import Image, ImageTk
 from WebCamClone import WebCamClone
 
 class WebCamCloneGUI:
@@ -10,15 +12,43 @@ class WebCamCloneGUI:
 
         self.vc = None
         self.thread = None
+        self.preview_thread = None
+        self.preview_running = False
 
-        self.top_frame = tk.Frame(master)
-        self.top_frame.pack(pady=10)
+        # Preview frame - smaller and positioned on the right
+        self.preview_frame = tk.Frame(master)
+        self.preview_frame.pack(side=tk.RIGHT, padx=10, pady=10, fill=tk.Y)
+        
+        self.preview_label = tk.Label(self.preview_frame, text="Preview", font=("Arial", 9, "bold"))
+        self.preview_label.pack(side=tk.TOP, pady=2)
+        
+        self.preview_canvas = tk.Label(self.preview_frame, bg="black", relief="sunken", bd=1)
+        self.preview_canvas.pack(side=tk.TOP, pady=2)
 
-        self.middle_frame = tk.Frame(master)
-        self.middle_frame.pack(pady=10)
+        # Main controls frame - positioned on the left
+        self.main_frame = tk.Frame(master)
+        self.main_frame.pack(side=tk.LEFT, padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-        self.bottom_frame = tk.Frame(master)
-        self.bottom_frame.pack(pady=10)
+        self.top_frame = tk.Frame(self.main_frame)
+        self.top_frame.pack(pady=5)
+
+        self.middle_frame = tk.Frame(self.main_frame)
+        self.middle_frame.pack(pady=5)
+
+        self.bottom_frame = tk.Frame(self.main_frame)
+        self.bottom_frame.pack(pady=5)
+
+        # Camera selection frame
+        self.camera_frame = tk.Frame(self.main_frame)
+        self.camera_frame.pack(pady=5)
+        
+        self.camera_label = tk.Label(self.camera_frame, text="Camera Number:")
+        self.camera_label.pack(side=tk.LEFT, padx=5)
+        
+        self.camera_entry = tk.Spinbox(self.camera_frame, from_=0, to=10, width=5)
+        self.camera_entry.delete(0, tk.END)
+        self.camera_entry.insert(0, "0")  # Default to camera 0
+        self.camera_entry.pack(side=tk.LEFT, padx=5)
 
         self.live_feed_button = tk.Button(self.top_frame, text="Live Feed", command=self.switch_to_webcam, width=15, height=2)
         self.live_feed_button.pack(side=tk.LEFT, padx=5)
@@ -54,7 +84,9 @@ class WebCamCloneGUI:
                 # Step 1: Create WebCamClone object with callback
                 self.status_label.config(text="Initializing camera resources...", fg="orange")
                 self.master.update()
-                self.vc = WebCamClone(on_feed_started=self.on_feed_started_callback)
+                # Get camera number from input box
+                camera_number = int(self.camera_entry.get())
+                self.vc = WebCamClone(camera_index=camera_number, on_feed_started=self.on_feed_started_callback)
                 
                 # Step 2: Start the thread
                 self.status_label.config(text="Starting live feed...", fg="orange")
@@ -79,6 +111,8 @@ class WebCamCloneGUI:
     def on_feed_started_callback(self):
         """Called when the feed actually starts"""
         self.status_label.config(text="Live Feed Active", fg="green")
+        # Start preview display
+        self.start_preview()
 
     def switch_to_webcam(self):
         if self.vc is None:
@@ -145,7 +179,46 @@ class WebCamCloneGUI:
                     print(f"Error setting video path: {e}")
                     tk.messagebox.showerror("Error", f"Failed to load video file: {e}")
 
+    def start_preview(self):
+        """Start the preview display thread"""
+        if not self.preview_running and self.vc is not None:
+            self.preview_running = True
+            self.preview_thread = Thread(target=self.update_preview)
+            self.preview_thread.daemon = True
+            self.preview_thread.start()
+    
+    def stop_preview(self):
+        """Stop the preview display"""
+        self.preview_running = False
+        if self.preview_thread is not None:
+            self.preview_thread.join()
+            self.preview_thread = None
+    
+    def update_preview(self):
+        """Update the preview display with current frame"""
+        while self.preview_running and self.vc is not None:
+            try:
+                frame = self.vc.get_current_frame()
+                if frame is not None:
+                    # Resize frame for preview (smaller size - 100x75)
+                    preview_frame = cv2.resize(frame, (180, 135))
+                    # Mirror the frame horizontally (like a webcam mirror)
+                    preview_frame = cv2.flip(preview_frame, 1)
+                    # Convert BGR to RGB for PIL
+                    preview_frame = cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB)
+                    # Convert to PIL Image
+                    image = Image.fromarray(preview_frame)
+                    photo = ImageTk.PhotoImage(image)
+                    # Update the canvas
+                    self.preview_canvas.config(image=photo)
+                    self.preview_canvas.image = photo  # Keep a reference
+            except Exception as e:
+                print(f"Preview error: {e}")
+            # Update every 50ms (20 FPS) - less frequent for smaller preview
+            self.master.after(50, lambda: None)
+
     def on_closing(self):
+        self.stop_preview()
         if self.vc is not None:
             self.vc.close()
             if self.thread is not None:

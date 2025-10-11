@@ -2,11 +2,12 @@ import cv2
 import pyvirtualcam
 
 class WebCamClone:
-    def __init__(self, width=640, height=480, fps=30, video_path=None, on_feed_started=None):
+    def __init__(self, width=640, height=480, fps=30, video_path=None, camera_index=0, on_feed_started=None):
         self.width = width
         self.height = height
         self.fps = fps
         self.video_path = video_path
+        self.camera_index = camera_index
         self.on_feed_started = on_feed_started  # Callback function
         # Lazy initialization - only create when needed
         self.cam = None
@@ -17,6 +18,7 @@ class WebCamClone:
         self.isRecording = False
         self.out = None
         self._initialized = False
+        self.current_frame = None  # Store current frame for preview
 
     def set_live_feed_camera(self, camera_index):
         self.live_feed_camera_index = camera_index
@@ -50,8 +52,8 @@ class WebCamClone:
         try:
             # Initialize virtual camera
             self.cam = pyvirtualcam.Camera(width=self.width, height=self.height, fps=self.fps, device='Webcam Clone')
-            # Initialize webcam
-            self.cap = cv2.VideoCapture(0)
+            # Initialize webcam with specified camera index
+            self.cap = cv2.VideoCapture(self.camera_index)
             if not self.cap.isOpened():
                 raise Exception("Could not open webcam")
             # Initialize video capture if path is provided
@@ -93,6 +95,8 @@ class WebCamClone:
             if ret:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame = cv2.resize(frame, (self.width, self.height))
+                # Store current frame for preview
+                self.current_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 if self.isRecording:
                     # write the frame to the output file
                     self.out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
@@ -105,7 +109,8 @@ class WebCamClone:
             if ret:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame = cv2.resize(frame, (self.width, self.height))
-               
+                # Store current frame for preview
+                self.current_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 self.cam.send(frame)
                 self.cam.sleep_until_next_frame()
             else:
@@ -126,6 +131,10 @@ class WebCamClone:
         if self.out is not None:
             self.out.release()
             self.out = None
+    
+    def get_current_frame(self):
+        """Get the current frame for preview display"""
+        return self.current_frame
 
 
     def close(self):
