@@ -218,12 +218,109 @@ class WebCamCloneGUI:
             self.master.after(50, lambda: None)
 
     def on_closing(self):
-        self.stop_preview()
-        if self.vc is not None:
-            self.vc.close()
+        # Prevent multiple close attempts
+        if hasattr(self, '_closing'):
+            return
+        self._closing = True
+        
+        # Disable the close button to prevent multiple clicks
+        self.master.protocol("WM_DELETE_WINDOW", lambda: None)
+        
+        # Show closing status dialog
+        self.show_closing_dialog()
+        
+        # Start shutdown process in a separate thread
+        shutdown_thread = Thread(target=self.shutdown_process)
+        shutdown_thread.daemon = True
+        shutdown_thread.start()
+    
+    def show_closing_dialog(self):
+        """Show a dialog with closing status"""
+        self.closing_dialog = tk.Toplevel(self.master)
+        self.closing_dialog.title("Closing WebCamClone")
+        self.closing_dialog.geometry("300x150")
+        self.closing_dialog.resizable(False, False)
+        
+        # Center the dialog
+        self.closing_dialog.transient(self.master)
+        self.closing_dialog.grab_set()
+        
+        # Make it modal
+        self.closing_dialog.protocol("WM_DELETE_WINDOW", lambda: None)  # Disable close button
+        
+        # Status label
+        self.closing_status = tk.Label(self.closing_dialog, text="Shutting down...", font=("Arial", 10))
+        self.closing_status.pack(pady=20)
+        
+        # Progress steps
+        self.closing_steps = [
+            "Stopping preview display...",
+            "Stopping virtual camera...",
+            "Releasing camera resources...",
+            "Cleaning up threads...",
+            "Closing application..."
+        ]
+        
+        # Progress bar (simple text-based)
+        self.progress_label = tk.Label(self.closing_dialog, text="", font=("Arial", 9), fg="blue")
+        self.progress_label.pack(pady=10)
+        
+        # Cancel button (disabled during shutdown)
+        self.cancel_button = tk.Button(self.closing_dialog, text="Cancel", state=tk.DISABLED, command=self.cancel_shutdown)
+        self.cancel_button.pack(pady=10)
+    
+    def cancel_shutdown(self):
+        """Cancel the shutdown process"""
+        self.closing_dialog.destroy()
+        self._closing = False
+        # Re-enable close button
+        self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
+    
+    def shutdown_process(self):
+        """Perform the actual shutdown process with status updates"""
+        try:
+            # Step 1: Stop preview
+            self.master.after(0, lambda: self.update_closing_status(0))
+            self.stop_preview()
+            
+            # Step 2: Stop virtual camera
+            self.master.after(0, lambda: self.update_closing_status(1))
+            if self.vc is not None:
+                self.vc.close()
+            
+            # Step 3: Release camera resources
+            self.master.after(0, lambda: self.update_closing_status(2))
+            
+            # Step 4: Clean up threads
+            self.master.after(0, lambda: self.update_closing_status(3))
             if self.thread is not None:
-                self.thread.join()
+                self.thread.join(timeout=2)  # Wait max 2 seconds
                 self.thread = None
+            
+            # Step 5: Close application
+            self.master.after(0, lambda: self.update_closing_status(4))
+            
+            # Close the dialog and destroy the main window
+            self.master.after(0, self.finalize_shutdown)
+            
+        except Exception as e:
+            print(f"Error during shutdown: {e}")
+            self.master.after(0, self.finalize_shutdown)
+    
+    def update_closing_status(self, step):
+        """Update the closing status display"""
+        if hasattr(self, 'closing_status') and self.closing_status:
+            self.closing_status.config(text=self.closing_steps[step])
+            self.progress_label.config(text=f"Step {step + 1} of {len(self.closing_steps)}")
+            self.master.update()
+    
+    def finalize_shutdown(self):
+        """Finalize the shutdown process"""
+        try:
+            if hasattr(self, 'closing_dialog'):
+                self.closing_dialog.destroy()
+        except:
+            pass
         root.destroy()
 
 root = tk.Tk()
