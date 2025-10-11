@@ -3,6 +3,9 @@ from tkinter import filedialog, messagebox
 from threading import Thread
 import cv2
 from PIL import Image, ImageTk
+import subprocess
+import os
+import sys
 from WebCamClone import WebCamClone
 
 class WebCamCloneGUI:
@@ -88,6 +91,17 @@ class WebCamCloneGUI:
         self.status_label = tk.Label(self.status_frame, text="Ready", fg="green", font=("Arial", 9, "bold"))
         self.status_label.pack(side=tk.TOP, padx=5, pady=2)
         
+        # Virtual camera status
+        self.virtual_camera_status = tk.Label(self.status_frame, text="Virtual Camera: Checking...", fg="orange", font=("Arial", 8, "bold"))
+        self.virtual_camera_status.pack(side=tk.TOP, padx=5, pady=2)
+        
+        # Install button frame (initially hidden)
+        self.install_frame = tk.Frame(self.status_frame)
+        self.install_button = tk.Button(self.install_frame, text="Install Webcam Clone Virtual Camera", 
+                                      command=self.install_virtual_camera, width=25, height=1, 
+                                      bg="lightblue", font=("Arial", 8, "bold"))
+        self.install_button.pack(side=tk.TOP, padx=5, pady=2)
+        
         # Instructions label
         self.instructions_label = tk.Label(self.status_frame, text="Instructions: Start Live Feed → Select Video File → Switch to Virtual Feed", 
                                          font=("Arial", 8), fg="gray", wraplength=300)
@@ -102,9 +116,81 @@ class WebCamCloneGUI:
         self.select_button.pack(side=tk.TOP, padx=5, pady=3)
 
         master.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # Check for virtual camera after UI is ready
+        self.master.after(1000, self.check_virtual_camera)
+
+    def check_virtual_camera(self):
+        """Check if Webcam Clone virtual camera is available"""
+        try:
+            # Try to create a test virtual camera instance
+            test_cam = None
+            try:
+                import pyvirtualcam
+                test_cam = pyvirtualcam.Camera(width=640, height=480, fps=30, device='Webcam Clone')
+                test_cam.close()
+                # If we get here, the virtual camera exists
+                self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Available", fg="green")
+                self.install_frame.pack_forget()  # Hide install button
+            except Exception as e:
+                # Virtual camera doesn't exist or can't be created
+                self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Not Found", fg="red")
+                self.install_frame.pack(side=tk.TOP, padx=5, pady=2)  # Show install button
+                print(f"Virtual camera check failed: {e}")
+        except ImportError:
+            self.virtual_camera_status.config(text="Virtual Camera: pyvirtualcam not available", fg="red")
+            self.install_frame.pack(side=tk.TOP, padx=5, pady=2)
+
+    def install_virtual_camera(self):
+        """Install the Webcam Clone virtual camera"""
+        try:
+            # Get the directory where the script is located
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            install_bat = os.path.join(script_dir, "Install_virtual_cam", "Install.bat")
+            
+            if not os.path.exists(install_bat):
+                messagebox.showerror("Error", f"Install script not found: {install_bat}")
+                return
+            
+            # Show installation dialog
+            result = messagebox.askyesno("Install Virtual Camera", 
+                "This will install the 'Webcam Clone' virtual camera.\n\n"
+                "Administrator privileges are required.\n"
+                "The installation process will open in a new window.\n\n"
+                "Do you want to continue?")
+            
+            if result:
+                # Update status
+                self.virtual_camera_status.config(text="Virtual Camera: Installing...", fg="orange")
+                self.install_button.config(state=tk.DISABLED, text="Installing...")
+                
+                # Run the install script
+                subprocess.Popen([install_bat], shell=True)
+                
+                # Show completion message
+                messagebox.showinfo("Installation Started", 
+                    "Installation process has started.\n\n"
+                    "Please wait for the installation to complete,\n"
+                    "then restart this application to use the virtual camera.")
+                
+                # Reset button state
+                self.install_button.config(state=tk.NORMAL, text="Install Webcam Clone Virtual Camera")
+                
+        except Exception as e:
+            messagebox.showerror("Installation Error", f"Failed to start installation: {e}")
+            self.virtual_camera_status.config(text="Virtual Camera: Installation Failed", fg="red")
+            self.install_button.config(state=tk.NORMAL, text="Install Webcam Clone Virtual Camera")
 
     def start_vc(self):
         if self.vc is None:
+            # Check if virtual camera is available first
+            if "Not Found" in self.virtual_camera_status.cget("text") or "not available" in self.virtual_camera_status.cget("text"):
+                messagebox.showwarning("Virtual Camera Not Available", 
+                    "The 'Webcam Clone' virtual camera is not installed or not available.\n\n"
+                    "Please install it using the 'Install Webcam Clone Virtual Camera' button,\n"
+                    "then restart this application.")
+                return
+            
             # Show loading feedback
             self.live_feed_button.config(state=tk.DISABLED, text="Starting...")
             self.status_label.config(text="Creating virtual camera...", fg="orange")
@@ -134,6 +220,7 @@ class WebCamCloneGUI:
                 # Reset button state on error
                 self.live_feed_button.config(state=tk.NORMAL, text="Live Feed")
                 self.status_label.config(text="Error", fg="red")
+                self.virtual_camera_status.config(text="Virtual Camera: Initialization Failed", fg="red")
                 print(f"Error starting virtual camera: {e}")
                 # Show error message to user
                 tk.messagebox.showerror("Error", f"Failed to start virtual camera: {e}")
@@ -141,6 +228,8 @@ class WebCamCloneGUI:
     def on_feed_started_callback(self):
         """Called when the feed actually starts"""
         self.status_label.config(text="Live Feed Active - Virtual Camera Ready!", fg="green")
+        self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Initialized", fg="green")
+        self.install_frame.pack_forget()  # Hide install button since virtual camera is working
         self.instructions_label.config(text="✓ Live feed is now broadcasting to 'Webcam Clone' virtual camera. You can select a video file to switch to virtual feed.")
         self.recording_info_label.config(text="Recording: Will record the camera feed being broadcast")
         # Start preview display
@@ -158,11 +247,13 @@ class WebCamCloneGUI:
                 self.master.update()
                 self.vc.switch_to_webcam()
                 self.status_label.config(text="Live Feed Active - Camera Broadcasting!", fg="green")
+                self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Broadcasting Camera", fg="green")
                 self.instructions_label.config(text="✓ Live feed is now broadcasting your camera to 'Webcam Clone' virtual camera.")
                 self.recording_info_label.config(text="Recording: Will record the camera feed being broadcast")
             except Exception as e:
                 print(f"Error switching to webcam: {e}")
                 self.status_label.config(text="Error", fg="red")
+                self.virtual_camera_status.config(text="Virtual Camera: Error", fg="red")
                 tk.messagebox.showerror("Error", f"Failed to switch to webcam: {e}")
 
     def validate_and_switch_to_video(self):
@@ -196,10 +287,13 @@ class WebCamCloneGUI:
         try:
             self.vc.switch_to_video()
             self.status_label.config(text="Virtual Feed Active - Video Broadcasting!", fg="blue")
+            self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Broadcasting Video", fg="blue")
             self.instructions_label.config(text="✓ Virtual feed is now broadcasting your video file to 'Webcam Clone' virtual camera.")
             self.recording_info_label.config(text="Recording: Will record the video file being broadcast")
         except Exception as e:
             print(f"Error switching to video: {e}")
+            self.status_label.config(text="Error", fg="red")
+            self.virtual_camera_status.config(text="Virtual Camera: Error", fg="red")
             tk.messagebox.showerror("Error", f"Failed to switch to video: {e}")
 
     def start_recording(self):
@@ -405,6 +499,8 @@ class WebCamCloneGUI:
             self.master.after(0, lambda: self.update_closing_status(1))
             if self.vc is not None:
                 self.vc.close()
+                # Update virtual camera status
+                self.master.after(0, lambda: self.virtual_camera_status.config(text="Virtual Camera: Shutting Down", fg="orange"))
             
             # Step 3: Release camera resources
             self.master.after(0, lambda: self.update_closing_status(2))
