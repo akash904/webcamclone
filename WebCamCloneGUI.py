@@ -24,73 +24,82 @@ class WebCamCloneGUI:
 
         # Preview frame - smaller and positioned on the right
         self.preview_frame = tk.Frame(master)
-        self.preview_frame.pack(side=tk.RIGHT, padx=10, pady=10, fill=tk.Y)
+        self.preview_frame.pack(side=tk.RIGHT, padx=5, pady=5, fill=tk.Y)
         
-        self.preview_label = tk.Label(self.preview_frame, text="Preview", font=("Arial", 9, "bold"))
-        self.preview_label.pack(side=tk.TOP, pady=2)
+        self.preview_label = tk.Label(self.preview_frame, text="Preview", font=("Arial", 8, "bold"))
+        self.preview_label.pack(side=tk.TOP, pady=1)
         
         self.preview_canvas = tk.Label(self.preview_frame,  bg="black", relief="sunken", bd=1)
-        self.preview_canvas.pack(side=tk.TOP, pady=2)
+        self.preview_canvas.pack(side=tk.TOP, pady=1)
 
         # Main controls frame - positioned on the left
         self.main_frame = tk.Frame(master)
-        self.main_frame.pack(side=tk.LEFT, padx=10, pady=10, fill=tk.BOTH, expand=True)
+        self.main_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.BOTH, expand=True)
 
-        self.top_frame = tk.Frame(self.main_frame)
-        self.top_frame.pack(pady=5)
-
-        self.middle_frame = tk.Frame(self.main_frame)
-        self.middle_frame.pack(pady=5)
-
-        self.bottom_frame = tk.Frame(self.main_frame)
-        self.bottom_frame.pack(pady=5)
-
-        # Camera selection frame
-        self.camera_frame = tk.Frame(self.main_frame)
-        self.camera_frame.pack(pady=5)
         
-        self.camera_label = tk.Label(self.camera_frame, text="Camera Number:")
+        # Feed controls frame
+        self.feed_frame = tk.LabelFrame(self.main_frame, text="Feed Controls", font=("Arial", 8, "bold"), pady=5)
+        self.feed_frame.pack(fill=tk.X, pady=3)
+
+        self.live_feed_button = tk.Button(self.feed_frame, text="Live Feed", command=self.switch_to_webcam, width=12, height=1)
+        self.live_feed_button.pack(side=tk.LEFT, padx=5)
+
+        self.virtual_feed_button = tk.Button(self.feed_frame, text="Virtual Feed", command=self.validate_and_switch_to_video, state=tk.DISABLED, width=12, height=1)
+        self.virtual_feed_button.pack(side=tk.LEFT, padx=5)
+
+        # Recording controls frame
+        self.record_frame = tk.LabelFrame(self.main_frame, text="Recording Controls", font=("Arial", 8, "bold"), pady=5)
+        self.record_frame.pack(fill=tk.X, pady=3)
+
+        self.record_button = tk.Button(self.record_frame, text="Start Recording", command=self.start_recording, state=tk.DISABLED, width=12, height=1)
+        self.record_button.pack(side=tk.LEFT, padx=5)
+
+        self.stop_record_button = tk.Button(self.record_frame, text="Stop Recording", command=self.stop_recording, state=tk.DISABLED, width=12, height=1)
+        self.stop_record_button.pack(side=tk.LEFT, padx=5)
+
+        # Window settings frame
+        self.window_frame = tk.LabelFrame(self.main_frame, text="Window Settings", font=("Arial", 8, "bold"), pady=5)
+        self.window_frame.pack(fill=tk.X, pady=3)
+
+        self.always_on_top_var = tk.BooleanVar()
+        self.always_on_top_checkbox = tk.Checkbutton(self.window_frame, text="Always On Top", variable=self.always_on_top_var, command=self.toggle_always_on_top)
+        self.always_on_top_checkbox.pack(side=tk.LEFT, padx=5)
+
+        # Camera settings frame
+        self.camera_frame = tk.LabelFrame(self.main_frame, text="Camera Settings", font=("Arial", 8, "bold"), pady=5)
+        self.camera_frame.pack(fill=tk.X, pady=3)
+        
+        self.camera_label = tk.Label(self.camera_frame, text="Camera:")
         self.camera_label.pack(side=tk.LEFT, padx=5)
         
-        self.camera_entry = tk.Spinbox(self.camera_frame, from_=0, to=10, width=5)
+        self.camera_entry = tk.Spinbox(self.camera_frame, from_=0, to=10, width=4)
         self.camera_entry.delete(0, tk.END)
         self.camera_entry.insert(0, "0")  # Default to camera 0
         self.camera_entry.pack(side=tk.LEFT, padx=5)
 
-        self.live_feed_button = tk.Button(self.top_frame, text="Live Feed", command=self.switch_to_webcam, width=15, height=2)
-        self.live_feed_button.pack(side=tk.LEFT, padx=5)
 
-        self.virtual_feed_button = tk.Button(self.top_frame, text="Virtual Feed", command=self.validate_and_switch_to_video, state=tk.DISABLED, width=15, height=2)
-        self.virtual_feed_button.pack(side=tk.LEFT, padx=5)
+        # Status and info frame
+        self.status_frame = tk.LabelFrame(self.main_frame, text="Status & Information", font=("Arial", 8, "bold"), pady=5)
+        self.status_frame.pack(fill=tk.X, pady=3)
 
-        self.always_on_top_var = tk.BooleanVar()
-        self.always_on_top_checkbox = tk.Checkbutton(self.top_frame, text="Always On Top", variable=self.always_on_top_var, command=self.toggle_always_on_top)
-        self.always_on_top_checkbox.pack(side=tk.LEFT, padx=5)
+        self.selected_file_entry = tk.Label(self.status_frame, text="No Video File Selected", state=tk.NORMAL, font=("Arial", 8))
+        self.selected_file_entry.pack(side=tk.TOP, padx=5, pady=2)
 
-        self.record_button = tk.Button(self.middle_frame, text="Start Recording", command=self.start_recording, state=tk.DISABLED, width=15, height=2)
-        self.record_button.pack(side=tk.LEFT, padx=5)
-
-        self.stop_record_button = tk.Button(self.middle_frame, text="Stop Recording", command=self.stop_recording, state=tk.DISABLED, width=15, height=2)
-        self.stop_record_button.pack(side=tk.LEFT, padx=5)
-
-        self.selected_file_entry = tk.Label(self.bottom_frame, text="No Video File Selected", state=tk.NORMAL)
-        self.selected_file_entry.pack(side=tk.TOP, padx=5, pady=5)
-
-        self.status_label = tk.Label(self.bottom_frame, text="Ready", fg="green", font=("Arial", 10, "bold"))
+        self.status_label = tk.Label(self.status_frame, text="Ready", fg="green", font=("Arial", 9, "bold"))
         self.status_label.pack(side=tk.TOP, padx=5, pady=2)
         
         # Instructions label
-        self.instructions_label = tk.Label(self.bottom_frame, text="Instructions: Start Live Feed → Select Video File → Switch to Virtual Feed", 
+        self.instructions_label = tk.Label(self.status_frame, text="Instructions: Start Live Feed → Select Video File → Switch to Virtual Feed", 
                                          font=("Arial", 8), fg="gray", wraplength=300)
         self.instructions_label.pack(side=tk.TOP, padx=5, pady=2)
         
         # Recording info label
-        self.recording_info_label = tk.Label(self.bottom_frame, text="Recording: Records whatever is currently being broadcast to virtual camera", 
+        self.recording_info_label = tk.Label(self.status_frame, text="Recording: Records whatever is currently being broadcast to virtual camera", 
                                            font=("Arial", 8), fg="purple", wraplength=300)
         self.recording_info_label.pack(side=tk.TOP, padx=5, pady=2)
 
-        self.select_button = tk.Button(self.bottom_frame, text="Select Video File", command=self.select_file, state=tk.DISABLED, width=30, height=2)
-        self.select_button.pack(side=tk.BOTTOM, padx=5)
+        self.select_button = tk.Button(self.status_frame, text="Select Video File", command=self.select_file, state=tk.DISABLED, width=20, height=1)
+        self.select_button.pack(side=tk.TOP, padx=5, pady=3)
 
         master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -309,8 +318,8 @@ class WebCamCloneGUI:
             try:
                 frame = self.vc.get_current_frame()
                 if frame is not None:
-                    # Resize frame for preview (smaller size - 100x75)
-                    preview_frame = cv2.resize(frame, (180, 135))
+                    # Resize frame for preview (smaller size - 160x120)
+                    preview_frame = cv2.resize(frame, (160, 120))
                     # Mirror the frame horizontally (like a webcam mirror)
                     preview_frame = cv2.flip(preview_frame, 1)
                     # Convert BGR to RGB for PIL
