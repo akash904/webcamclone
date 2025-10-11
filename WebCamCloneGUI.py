@@ -9,11 +9,18 @@ class WebCamCloneGUI:
     def __init__(self, master):
         self.master = master
         master.title("WebCamClone GUI")
+        
+        # Set the window icon
+        try:
+            master.iconbitmap("wc.ico")
+        except Exception as e:
+            print(f"Could not load icon: {e}")
 
         self.vc = None
         self.thread = None
         self.preview_thread = None
         self.preview_running = False
+        self.always_on_top = False
 
         # Preview frame - smaller and positioned on the right
         self.preview_frame = tk.Frame(master)
@@ -22,7 +29,7 @@ class WebCamCloneGUI:
         self.preview_label = tk.Label(self.preview_frame, text="Preview", font=("Arial", 9, "bold"))
         self.preview_label.pack(side=tk.TOP, pady=2)
         
-        self.preview_canvas = tk.Label(self.preview_frame, bg="black", relief="sunken", bd=1)
+        self.preview_canvas = tk.Label(self.preview_frame,  bg="black", relief="sunken", bd=1)
         self.preview_canvas.pack(side=tk.TOP, pady=2)
 
         # Main controls frame - positioned on the left
@@ -55,6 +62,10 @@ class WebCamCloneGUI:
 
         self.virtual_feed_button = tk.Button(self.top_frame, text="Virtual Feed", command=self.validate_and_switch_to_video, state=tk.DISABLED, width=15, height=2)
         self.virtual_feed_button.pack(side=tk.LEFT, padx=5)
+
+        self.always_on_top_var = tk.BooleanVar()
+        self.always_on_top_checkbox = tk.Checkbutton(self.top_frame, text="Always On Top", variable=self.always_on_top_var, command=self.toggle_always_on_top)
+        self.always_on_top_checkbox.pack(side=tk.LEFT, padx=5)
 
         self.record_button = tk.Button(self.middle_frame, text="Start Recording", command=self.start_recording, state=tk.DISABLED, width=15, height=2)
         self.record_button.pack(side=tk.LEFT, padx=5)
@@ -235,6 +246,15 @@ class WebCamCloneGUI:
             return False
         # Check if we're using webcam or video
         return (self.vc.use_webcam and self.vc.cap is not None) or (not self.vc.use_webcam and self.vc.video is not None)
+
+    def toggle_always_on_top(self):
+        """Toggle the always on top state of the window"""
+        self.always_on_top = self.always_on_top_var.get()
+        
+        if self.always_on_top:
+            self.master.attributes('-topmost', True)
+        else:
+            self.master.attributes('-topmost', False)
 
 
     def select_file(self):
