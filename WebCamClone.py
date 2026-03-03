@@ -1,5 +1,8 @@
 import cv2
 import pyvirtualcam
+import sys
+import time
+from threading import Thread
 
 class WebCamClone:
     def __init__(self, width=640, height=480, fps=30, video_path=None, camera_index=0, on_feed_started=None):
@@ -19,6 +22,27 @@ class WebCamClone:
         self.out = None
         self._initialized = False
         self.current_frame = None  # Store current frame for preview
+
+    def _open_camera_capture(self, camera_index):
+        """Open physical camera with backend strategy tuned per platform."""
+        if sys.platform.startswith("win"):
+            # Try DSHOW first for faster startup on many Windows drivers,
+            # then MSMF as fallback for compatibility.
+            backends = []
+            if hasattr(cv2, "CAP_DSHOW"):
+                backends.append(cv2.CAP_DSHOW)
+            if hasattr(cv2, "CAP_MSMF"):
+                backends.append(cv2.CAP_MSMF)
+            backends.append(cv2.CAP_ANY)
+        else:
+            backends = [cv2.CAP_ANY]
+
+        for backend in backends:
+            cap = cv2.VideoCapture(camera_index, backend)
+            if cap.isOpened():
+                return cap
+            cap.release()
+        return None
 
     def set_live_feed_camera(self, camera_index):
         self.live_feed_camera_index = camera_index
@@ -50,11 +74,52 @@ class WebCamClone:
             return True
             
         try:
-            # Initialize virtual camera
-            self.cam = pyvirtualcam.Camera(width=self.width, height=self.height, fps=self.fps, device='Webcam Clone')
-            # Initialize webcam with specified camera index
-            self.cap = cv2.VideoCapture(self.camera_index)
-            if not self.cap.isOpened():
+            init_start = time.perf_counter()
+            timing = {}
+            results = {"cam": None, "cap": None}
+            errors = {"cam": None, "cap": None}
+
+            def init_virtual_camera():
+                start = time.perf_counter()
+                try:
+                    results["cam"] = pyvirtualcam.Camera(
+                        width=self.width,
+                        height=self.height,
+                        fps=self.fps,
+                        device='Webcam Clone'
+                    )
+                except Exception as e:
+                    errors["cam"] = e
+                finally:
+                    timing["virtual_cam"] = time.perf_counter() - start
+
+            def init_webcam():
+                start = time.perf_counter()
+                try:
+                    results["cap"] = self._open_camera_capture(self.camera_index)
+                except Exception as e:
+                    errors["cap"] = e
+                finally:
+                    timing["webcam"] = time.perf_counter() - start
+
+            virtual_thread = Thread(target=init_virtual_camera, daemon=True)
+            webcam_thread = Thread(target=init_webcam, daemon=True)
+            virtual_thread.start()
+            webcam_thread.start()
+            virtual_thread.join()
+            webcam_thread.join()
+
+            if errors["cam"] is not None:
+                raise errors["cam"]
+            if errors["cap"] is not None:
+                raise errors["cap"]
+
+            self.cam = results["cam"]
+            self.cap = results["cap"]
+            if self.cap is None:
+                if self.cam is not None:
+                    self.cam.close()
+                    self.cam = None
                 raise Exception("Could not open webcam")
             # Initialize video capture if path is provided
             if self.video_path:
@@ -62,6 +127,14 @@ class WebCamClone:
                 if not self.video.isOpened():
                     print(f"Warning: Could not open video file: {self.video_path}")
                     self.video = None
+
+            total_time = time.perf_counter() - init_start
+            print(
+                "Init timing (s): "
+                f"virtual_cam={timing.get('virtual_cam', 0.0):.2f}, "
+                f"webcam={timing.get('webcam', 0.0):.2f}, "
+                f"total={total_time:.2f}"
+            )
             
             self._initialized = True
             return True

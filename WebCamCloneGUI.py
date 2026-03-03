@@ -26,6 +26,7 @@ class WebCamCloneGUI:
         self.always_on_top = False
         self.preview_width = 220
         self.preview_height = 165
+        self.virtual_camera_check_running = False
 
         # Preview frame - positioned on the right
         self.preview_frame = tk.Frame(master)
@@ -123,28 +124,41 @@ class WebCamCloneGUI:
         master.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # Check for virtual camera after UI is ready
-        self.master.after(1000, self.check_virtual_camera)
+        self.master.after(1000, self.check_virtual_camera_async)
+
+    def check_virtual_camera_async(self):
+        """Run virtual camera availability check in background."""
+        if self.virtual_camera_check_running:
+            return
+        self.virtual_camera_check_running = True
+
+        def run_check():
+            try:
+                self.check_virtual_camera()
+            finally:
+                self.virtual_camera_check_running = False
+
+        Thread(target=run_check, daemon=True).start()
 
     def check_virtual_camera(self):
         """Check if Webcam Clone virtual camera is available"""
         try:
             # Try to create a test virtual camera instance
-            test_cam = None
             try:
                 import pyvirtualcam
                 test_cam = pyvirtualcam.Camera(width=640, height=480, fps=30, device='Webcam Clone')
                 test_cam.close()
                 # If we get here, the virtual camera exists
-                self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Available", fg="green")
-                self.install_frame.pack_forget()  # Hide install button
+                self.master.after(0, lambda: self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Available", fg="green"))
+                self.master.after(0, self.install_frame.pack_forget)  # Hide install button
             except Exception as e:
                 # Virtual camera doesn't exist or can't be created
-                self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Not Found", fg="red")
-                self.install_frame.pack(side=tk.TOP, padx=5, pady=2)  # Show install button
+                self.master.after(0, lambda: self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Not Found", fg="red"))
+                self.master.after(0, lambda: self.install_frame.pack(side=tk.TOP, padx=5, pady=2))  # Show install button
                 print(f"Virtual camera check failed: {e}")
         except ImportError:
-            self.virtual_camera_status.config(text="Virtual Camera: pyvirtualcam not available", fg="red")
-            self.install_frame.pack(side=tk.TOP, padx=5, pady=2)
+            self.master.after(0, lambda: self.virtual_camera_status.config(text="Virtual Camera: pyvirtualcam not available", fg="red"))
+            self.master.after(0, lambda: self.install_frame.pack(side=tk.TOP, padx=5, pady=2))
 
     def install_virtual_camera(self):
         """Install the Webcam Clone virtual camera"""
@@ -207,7 +221,10 @@ class WebCamCloneGUI:
                 self.master.update()
                 # Get camera number from input box
                 camera_number = int(self.camera_entry.get())
-                self.vc = WebCamClone(camera_index=camera_number, on_feed_started=self.on_feed_started_callback)
+                self.vc = WebCamClone(
+                    camera_index=camera_number,
+                    on_feed_started=lambda: self.master.after(0, self.on_feed_started_callback)
+                )
                 
                 # Step 2: Start the thread
                 self.status_label.config(text="Starting live feed...", fg="orange")
