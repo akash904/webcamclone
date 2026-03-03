@@ -24,8 +24,10 @@ class WebCamCloneGUI:
         self.preview_thread = None
         self.preview_running = False
         self.always_on_top = False
+        self.preview_width = 220
+        self.preview_height = 165
 
-        # Preview frame - smaller and positioned on the right
+        # Preview frame - positioned on the right
         self.preview_frame = tk.Frame(master)
         self.preview_frame.pack(side=tk.RIGHT, padx=5, pady=5, fill=tk.Y)
         
@@ -412,8 +414,8 @@ class WebCamCloneGUI:
             try:
                 frame = self.vc.get_current_frame()
                 if frame is not None:
-                    # Resize frame for preview (smaller size - 160x120)
-                    preview_frame = cv2.resize(frame, (160, 120))
+                    # Resize frame for preview
+                    preview_frame = cv2.resize(frame, (self.preview_width, self.preview_height))
                     # Mirror the frame horizontally (like a webcam mirror)
                     preview_frame = cv2.flip(preview_frame, 1)
                     # Convert BGR to RGB for PIL
@@ -426,7 +428,7 @@ class WebCamCloneGUI:
                     self.preview_canvas.image = photo  # Keep a reference
             except Exception as e:
                 print(f"Preview error: {e}")
-            # Update every 50ms (20 FPS) - less frequent for smaller preview
+            # Update every 50ms (20 FPS)
             self.master.after(50, lambda: None)
 
     def on_closing(self):
