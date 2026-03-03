@@ -40,6 +40,24 @@ class WebCamCloneGUI:
         self.preview_placeholder = tk.PhotoImage(width=self.preview_width, height=self.preview_height)
         self.preview_canvas.config(image=self.preview_placeholder)
         self.preview_canvas.image = self.preview_placeholder
+        self.playback_speed_var = tk.DoubleVar(value=1.0)
+        self.playback_speed_frame = tk.Frame(self.preview_frame)
+        self.playback_speed_label = tk.Label(self.playback_speed_frame, text="Playback Speed", font=("Arial", 8, "bold"))
+        self.playback_speed_label.pack(side=tk.TOP, pady=(4, 0))
+        self.playback_speed_value_label = tk.Label(self.playback_speed_frame, text="1.00x", font=("Arial", 8))
+        self.playback_speed_value_label.pack(side=tk.TOP, pady=1)
+        self.playback_speed_slider = tk.Scale(
+            self.playback_speed_frame,
+            from_=0.25,
+            to=3.0,
+            resolution=0.05,
+            orient=tk.HORIZONTAL,
+            length=self.preview_width,
+            showvalue=False,
+            variable=self.playback_speed_var,
+            command=self.on_playback_speed_changed
+        )
+        self.playback_speed_slider.pack(side=tk.TOP, pady=(0, 2))
 
         # Main controls frame - positioned on the left
         self.main_frame = tk.Frame(master)
@@ -84,6 +102,9 @@ class WebCamCloneGUI:
         self.camera_entry = tk.Spinbox(self.camera_frame, from_=0, to=10, width=4)
         self.camera_entry.delete(0, tk.END)
         self.camera_entry.insert(0, "0")  # Default to camera 0
+        self.camera_entry.configure(command=self.on_camera_selection_changed)
+        self.camera_entry.bind("<Return>", self.on_camera_selection_changed)
+        self.camera_entry.bind("<FocusOut>", self.on_camera_selection_changed)
         self.camera_entry.pack(side=tk.LEFT, padx=5)
 
 
@@ -246,6 +267,30 @@ class WebCamCloneGUI:
                 print(f"Error starting virtual camera: {e}")
                 # Show error message to user
                 tk.messagebox.showerror("Error", f"Failed to start virtual camera: {e}")
+
+    def on_camera_selection_changed(self, event=None):
+        """Switch camera immediately if live feed is already running."""
+        try:
+            camera_number = int(self.camera_entry.get())
+        except ValueError:
+            return
+
+        if self.vc is None:
+            return
+
+        self.status_label.config(text=f"Switching to Camera {camera_number}...", fg="orange")
+        self.master.update()
+        switched = self.vc.switch_camera(camera_number)
+        if switched:
+            self.vc.switch_to_webcam()
+            self.status_label.config(text=f"Live Feed Active - Camera {camera_number}", fg="green")
+            self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Broadcasting Camera", fg="green")
+            self.instructions_label.config(text="✓ Live feed is now broadcasting your selected camera to 'Webcam Clone' virtual camera.")
+            self.recording_info_label.config(text="Recording: Will record the camera feed being broadcast")
+            self.hide_playback_speed_controls()
+        else:
+            self.status_label.config(text=f"Failed to open Camera {camera_number}", fg="red")
+            tk.messagebox.showerror("Camera Switch Failed", f"Could not open camera index {camera_number}.")
     
     def on_feed_started_callback(self):
         """Called when the feed actually starts"""
@@ -254,6 +299,7 @@ class WebCamCloneGUI:
         self.install_frame.pack_forget()  # Hide install button since virtual camera is working
         self.instructions_label.config(text="✓ Live feed is now broadcasting to 'Webcam Clone' virtual camera. You can select a video file to switch to virtual feed.")
         self.recording_info_label.config(text="Recording: Will record the camera feed being broadcast")
+        self.hide_playback_speed_controls()
         # Start preview display
         self.start_preview()
 
@@ -272,6 +318,7 @@ class WebCamCloneGUI:
                 self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Broadcasting Camera", fg="green")
                 self.instructions_label.config(text="✓ Live feed is now broadcasting your camera to 'Webcam Clone' virtual camera.")
                 self.recording_info_label.config(text="Recording: Will record the camera feed being broadcast")
+                self.hide_playback_speed_controls()
             except Exception as e:
                 print(f"Error switching to webcam: {e}")
                 self.status_label.config(text="Error", fg="red")
@@ -308,15 +355,31 @@ class WebCamCloneGUI:
         """Switch to video feed (called after validation)"""
         try:
             self.vc.switch_to_video()
+            self.vc.set_playback_speed(self.playback_speed_var.get())
             self.status_label.config(text="Virtual Feed Active - Video Broadcasting!", fg="blue")
             self.virtual_camera_status.config(text="Virtual Camera: 'Webcam Clone' Broadcasting Video", fg="blue")
             self.instructions_label.config(text="✓ Virtual feed is now broadcasting your video file to 'Webcam Clone' virtual camera.")
             self.recording_info_label.config(text="Recording: Will record the video file being broadcast")
+            self.show_playback_speed_controls()
         except Exception as e:
             print(f"Error switching to video: {e}")
             self.status_label.config(text="Error", fg="red")
             self.virtual_camera_status.config(text="Virtual Camera: Error", fg="red")
             tk.messagebox.showerror("Error", f"Failed to switch to video: {e}")
+
+    def on_playback_speed_changed(self, value):
+        speed = float(value)
+        self.playback_speed_value_label.config(text=f"{speed:.2f}x")
+        if self.vc is not None:
+            self.vc.set_playback_speed(speed)
+
+    def show_playback_speed_controls(self):
+        if not self.playback_speed_frame.winfo_ismapped():
+            self.playback_speed_frame.pack(side=tk.TOP, fill=tk.X, pady=(2, 0))
+
+    def hide_playback_speed_controls(self):
+        if self.playback_speed_frame.winfo_ismapped():
+            self.playback_speed_frame.pack_forget()
 
     def start_recording(self):
         if self.vc is not None:

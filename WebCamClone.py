@@ -2,7 +2,7 @@ import cv2
 import pyvirtualcam
 import sys
 import time
-from threading import Thread
+from threading import Lock, Thread
 
 class WebCamClone:
     def __init__(self, width=640, height=480, fps=30, video_path=None, camera_index=0, on_feed_started=None):
@@ -22,6 +22,20 @@ class WebCamClone:
         self.out = None
         self._initialized = False
         self.current_frame = None  # Store current frame for preview
+        self.cap_lock = Lock()
+        self.video_lock = Lock()
+        self.video_source_fps = float(fps)
+        self.playback_speed = 1.0
+        self.video_frame_interval = 1.0 / float(fps) if fps > 0 else (1.0 / 30.0)
+        self.last_video_frame_time = 0.0
+        self.current_video_frame = None
+
+    def _update_video_interval(self):
+        base_fps = self.video_source_fps if self.video_source_fps > 0 else float(self.fps)
+        effective_fps = base_fps * self.playback_speed
+        if effective_fps <= 0:
+            effective_fps = float(self.fps) if self.fps > 0 else 30.0
+        self.video_frame_interval = 1.0 / effective_fps
 
     def _open_camera_capture(self, camera_index):
         """Open physical camera with backend strategy tuned per platform."""
@@ -45,7 +59,7 @@ class WebCamClone:
         return None
 
     def set_live_feed_camera(self, camera_index):
-        self.live_feed_camera_index = camera_index
+        self.camera_index = camera_index
 
     def set_virtual_camera(self, virtual_camera_index):
         self.virtual_camera_index = virtual_camera_index
@@ -59,14 +73,77 @@ class WebCamClone:
     
     def switch_to_video(self):
         self.use_webcam = False
+        self.last_video_frame_time = 0.0
+
+    def set_playback_speed(self, speed):
+        """Set virtual video playback speed multiplier."""
+        try:
+            speed_value = float(speed)
+        except (ValueError, TypeError):
+            return
+        speed_value = max(0.25, min(3.0, speed_value))
+        with self.video_lock:
+            self.playback_speed = speed_value
+            self._update_video_interval()
 
     def set_video_path(self, video_path):
         self.video_path = video_path
-        # Only initialize video capture if path is valid
-        if video_path:
-            self.video = cv2.VideoCapture(self.video_path)
-        else:
-            self.video = None
+        with self.video_lock:
+            # Release previous video capture if present.
+            if self.video is not None:
+                self.video.release()
+                self.video = None
+
+            # Only initialize video capture if path is valid.
+            if not video_path:
+                self.current_video_frame = None
+                return
+
+            video = cv2.VideoCapture(self.video_path)
+            if not video.isOpened():
+                video.release()
+                raise Exception(f"Could not open video file: {self.video_path}")
+
+            source_fps = float(video.get(cv2.CAP_PROP_FPS))
+            if source_fps <= 1.0 or source_fps > 240.0:
+                source_fps = float(self.fps)
+            self.video_source_fps = source_fps
+            self._update_video_interval()
+            self.last_video_frame_time = 0.0
+            self.current_video_frame = None
+
+            # Probe a few frames to validate the stream is decodable.
+            probe_ok = False
+            for _ in range(10):
+                ret, _ = video.read()
+                if ret:
+                    probe_ok = True
+                    break
+            video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            if not probe_ok:
+                video.release()
+                raise Exception("Video file appears corrupted or unsupported.")
+
+            self.video = video
+
+    def switch_camera(self, camera_index):
+        """Switch active physical camera while running."""
+        if camera_index == self.camera_index and self.cap is not None:
+            return True
+
+        new_cap = self._open_camera_capture(camera_index)
+        if new_cap is None:
+            return False
+
+        with self.cap_lock:
+            old_cap = self.cap
+            self.cap = new_cap
+            self.camera_index = camera_index
+            self.current_frame = None
+
+        if old_cap is not None:
+            old_cap.release()
+        return True
 
     def _initialize_resources(self):
         """Initialize camera and virtual camera resources"""
@@ -162,9 +239,10 @@ class WebCamClone:
             return
             
         if self.use_webcam:
-            if self.cap is None:
-                return
-            ret, frame = self.cap.read()
+            with self.cap_lock:
+                if self.cap is None:
+                    return
+                ret, frame = self.cap.read()
             if ret:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame = cv2.resize(frame, (self.width, self.height))
@@ -176,19 +254,42 @@ class WebCamClone:
                 self.cam.send(frame)
                 self.cam.sleep_until_next_frame()
         else:
-            if self.video is None:
-                return
-            ret, frame = self.video.read()
-            if ret:
+            frame = None
+            with self.video_lock:
+                if self.video is None:
+                    return
+                now = time.perf_counter()
+                should_advance = (
+                    self.current_video_frame is None or
+                    (now - self.last_video_frame_time) >= self.video_frame_interval
+                )
+
+                if should_advance:
+                    ret, next_frame = self.video.read()
+                    if ret:
+                        self.current_video_frame = next_frame
+                        self.last_video_frame_time = now
+                    else:
+                        frame_count = int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
+                        current_pos = int(self.video.get(cv2.CAP_PROP_POS_FRAMES))
+                        if frame_count > 0 and current_pos >= frame_count - 1:
+                            # Restart only at end-of-file.
+                            self.video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        elif frame_count > 0:
+                            # Skip likely-corrupt frame to avoid decode-error loops.
+                            self.video.set(cv2.CAP_PROP_POS_FRAMES, min(current_pos + 1, frame_count - 1))
+                if self.current_video_frame is not None:
+                    frame = self.current_video_frame.copy()
+
+            if frame is not None:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame = cv2.resize(frame, (self.width, self.height))
                 # Store current frame for preview
                 self.current_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                if self.isRecording:
+                    self.out.write(self.current_frame)
                 self.cam.send(frame)
                 self.cam.sleep_until_next_frame()
-            else:
-                # restart the video when it ends
-                self.video.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
     def start_recording(self, filename):
         # define the codec and create a VideoWriter object
@@ -216,10 +317,14 @@ class WebCamClone:
         # stop sending frames and release resources
         self.isWebcamCloneRunning = False
         # release resources for webcam and video feeds
-        if self.cap is not None:
-            self.cap.release()
-        if self.video is not None:
-            self.video.release()
+        with self.cap_lock:
+            if self.cap is not None:
+                self.cap.release()
+                self.cap = None
+        with self.video_lock:
+            if self.video is not None:
+                self.video.release()
+                self.video = None
         if self.cam is not None:
             self.cam.close()
         self._initialized = False
