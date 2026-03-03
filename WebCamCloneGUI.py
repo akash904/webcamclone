@@ -34,8 +34,11 @@ class WebCamCloneGUI:
         self.preview_label = tk.Label(self.preview_frame, text="Preview", font=("Arial", 8, "bold"))
         self.preview_label.pack(side=tk.TOP, pady=1)
         
-        self.preview_canvas = tk.Label(self.preview_frame,  bg="black", relief="sunken", bd=1)
+        self.preview_canvas = tk.Label(self.preview_frame, bg="black", relief="sunken", bd=1)
         self.preview_canvas.pack(side=tk.TOP, pady=1)
+        self.preview_placeholder = tk.PhotoImage(width=self.preview_width, height=self.preview_height)
+        self.preview_canvas.config(image=self.preview_placeholder)
+        self.preview_canvas.image = self.preview_placeholder
 
         # Main controls frame - positioned on the left
         self.main_frame = tk.Frame(master)
