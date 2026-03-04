@@ -27,6 +27,8 @@ class WebCamCloneGUI:
         self.preview_width = 220
         self.preview_height = 165
         self.virtual_camera_check_running = False
+        self.active_recording_path = None
+        self.auto_select_recording_var = tk.BooleanVar(value=True)
 
         # Preview frame - positioned on the right
         self.preview_frame = tk.Frame(master)
@@ -78,11 +80,21 @@ class WebCamCloneGUI:
         self.record_frame = tk.LabelFrame(self.main_frame, text="Recording Controls", font=("Arial", 8, "bold"), pady=5)
         self.record_frame.pack(fill=tk.X, pady=3)
 
-        self.record_button = tk.Button(self.record_frame, text="Start Recording", command=self.start_recording, state=tk.DISABLED, width=12, height=1)
+        self.record_buttons_row = tk.Frame(self.record_frame)
+        self.record_buttons_row.pack(fill=tk.X)
+
+        self.record_button = tk.Button(self.record_buttons_row, text="Start Recording", command=self.start_recording, state=tk.DISABLED, width=12, height=1)
         self.record_button.pack(side=tk.LEFT, padx=5)
 
-        self.stop_record_button = tk.Button(self.record_frame, text="Stop Recording", command=self.stop_recording, state=tk.DISABLED, width=12, height=1)
+        self.stop_record_button = tk.Button(self.record_buttons_row, text="Stop Recording", command=self.stop_recording, state=tk.DISABLED, width=12, height=1)
         self.stop_record_button.pack(side=tk.LEFT, padx=5)
+
+        self.auto_select_recording_checkbox = tk.Checkbutton(
+            self.record_frame,
+            text="Auto-select recorded video for Virtual Feed",
+            variable=self.auto_select_recording_var
+        )
+        self.auto_select_recording_checkbox.pack(side=tk.TOP, anchor=tk.W, padx=5, pady=(4, 0))
 
         # Window settings frame
         self.window_frame = tk.LabelFrame(self.main_frame, text="Window Settings", font=("Arial", 8, "bold"), pady=5)
@@ -336,20 +348,55 @@ class WebCamCloneGUI:
                 "3. Select a video file\n"
                 "4. Then click 'Virtual Feed'")
             return
-        
-        # Check if video file is selected
-        if not hasattr(self.vc, 'video') or self.vc.video is None:
-            tk.messagebox.showwarning("No Video File Selected", 
-                "Please select a video file first before switching to virtual feed.\n\n"
-                "Steps:\n"
-                "1. Click 'Select Video File' button\n"
-                "2. Choose your video file\n"
-                "3. Then click 'Virtual Feed'\n\n"
-                "The video file will be broadcast to the 'Webcam Clone' virtual camera.")
-            return
-        
+
+        if not self.has_video_selected():
+            if not self.prompt_select_video_for_virtual_feed():
+                return
+            if not self.has_video_selected():
+                self.status_label.config(text="No video selected for Virtual Feed", fg="orange")
+                return
+
         # All validations passed, proceed with switching
         self.switch_to_video()
+
+    def has_video_selected(self):
+        return self.vc is not None and getattr(self.vc, "video", None) is not None
+
+    def prompt_select_video_for_virtual_feed(self):
+        dialog = tk.Toplevel(self.master)
+        dialog.title("No Video File Selected")
+        dialog.resizable(False, False)
+        dialog.transient(self.master)
+        dialog.grab_set()
+
+        tk.Label(
+            dialog,
+            text="No video file is selected for Virtual Feed.\nSelect a video now?",
+            justify=tk.LEFT,
+            padx=12,
+            pady=10
+        ).pack(fill=tk.BOTH)
+
+        selection = {"select": False}
+
+        def on_select():
+            selection["select"] = True
+            dialog.destroy()
+
+        def on_cancel():
+            dialog.destroy()
+
+        buttons = tk.Frame(dialog)
+        buttons.pack(pady=(0, 10))
+        tk.Button(buttons, text="Select Video", width=12, command=on_select).pack(side=tk.LEFT, padx=5)
+        tk.Button(buttons, text="Cancel", width=12, command=on_cancel).pack(side=tk.LEFT, padx=5)
+
+        dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+        self.master.wait_window(dialog)
+
+        if selection["select"]:
+            return self.select_file()
+        return False
     
     def switch_to_video(self):
         """Switch to video feed (called after validation)"""
@@ -393,6 +440,7 @@ class WebCamCloneGUI:
                     "3. Then click 'Start Recording'")
                 return
             
+            self.active_recording_path = None
             filename = filedialog.asksaveasfilename(
                 title="Save Recording As",
                 defaultextension=".mp4",
@@ -401,10 +449,11 @@ class WebCamCloneGUI:
             if filename:
                 try:
                     self.vc.start_recording(filename)
+                    self.active_recording_path = filename
                     self.record_button.config(state=tk.DISABLED, text="Recording...")
                     self.stop_record_button.config(state=tk.NORMAL)
                     self.status_label.config(text="Recording Active - Saving to file!", fg="red")
-                    self.recording_info_label.config(text=f"✓ Recording: {filename.split('/')[-1]} - Records current broadcast")
+                    self.recording_info_label.config(text=f"Recording: {os.path.basename(filename)} - Records current broadcast")
                 except Exception as e:
                     print(f"Error starting recording: {e}")
                     tk.messagebox.showerror("Error", f"Failed to start recording: {e}")
@@ -422,8 +471,19 @@ class WebCamCloneGUI:
                 self.vc.stop_recording()
                 self.record_button.config(state=tk.NORMAL, text="Start Recording")
                 self.stop_record_button.config(state=tk.DISABLED)
+                recorded_file = self.active_recording_path
+                self.active_recording_path = None
+                if self.auto_select_recording_var.get() and recorded_file and os.path.exists(recorded_file):
+                    self.set_selected_video_file(
+                        recorded_file,
+                        status_text="Recording Stopped - Video Auto-Selected!"
+                    )
+                    self.recording_info_label.config(
+                        text=f"Recording completed and auto-selected: {os.path.basename(recorded_file)}"
+                    )
+                    return
                 self.status_label.config(text="Recording Stopped - File Saved!", fg="orange")
-                self.recording_info_label.config(text="✓ Recording completed and saved to file")
+                self.recording_info_label.config(text="Recording completed and saved to file")
             except Exception as e:
                 print(f"Error stopping recording: {e}")
                 tk.messagebox.showerror("Error", f"Failed to stop recording: {e}")
@@ -445,36 +505,40 @@ class WebCamCloneGUI:
             self.master.attributes('-topmost', False)
 
 
+    def set_selected_video_file(self, filename, status_text="Video file loaded successfully!"):
+        self.vc.set_video_path(filename)
+        self.selected_file_entry.config(text=f"Selected video: {os.path.basename(filename)}")
+        self.status_label.config(text=status_text, fg="green")
+        self.instructions_label.config(
+            text="Video file loaded. Click 'Virtual Feed' to broadcast this video."
+        )
+
     def select_file(self):
         if self.vc is not None:
             filename = filedialog.askopenfilename(
                 title="Select Video File",
                 filetypes=[("Video files", "*.mp4 *.avi *.mov *.mkv *.wmv"), ("All files", "*.*")]
             )
-            if filename:
-                try:
-                    # Show loading status
-                    self.status_label.config(text="Loading video file...", fg="orange")
-                    self.master.update()
-                    
-                    self.vc.set_video_path(filename)
-                    
-                    # Update UI with success
-                    self.selected_file_entry.config(text=f"✓ {filename.split('/')[-1]}")
-                    self.status_label.config(text="Video file loaded successfully!", fg="green")
-                    self.instructions_label.config(text="✓ Video file loaded! You can now click 'Virtual Feed' to broadcast this video.")
-                    
-                except Exception as e:
-                    print(f"Error setting video path: {e}")
-                    self.status_label.config(text="Error loading video", fg="red")
-                    tk.messagebox.showerror("Error", f"Failed to load video file: {e}")
-        else:
-            tk.messagebox.showwarning("No Live Feed", 
-                "Please start the Live Feed first before selecting a video file.\n\n"
-                "Steps:\n"
-                "1. Click 'Live Feed' button\n"
-                "2. Wait for 'Virtual Camera Ready' message\n"
-                "3. Then select your video file")
+            if not filename:
+                return False
+            try:
+                # Show loading status
+                self.status_label.config(text="Loading video file...", fg="orange")
+                self.master.update()
+                self.set_selected_video_file(filename)
+                return True
+            except Exception as e:
+                print(f"Error setting video path: {e}")
+                self.status_label.config(text="Error loading video", fg="red")
+                tk.messagebox.showerror("Error", f"Failed to load video file: {e}")
+                return False
+        tk.messagebox.showwarning("No Live Feed", 
+            "Please start the Live Feed first before selecting a video file.\n\n"
+            "Steps:\n"
+            "1. Click 'Live Feed' button\n"
+            "2. Wait for 'Virtual Camera Ready' message\n"
+            "3. Then select your video file")
+        return False
 
     def start_preview(self):
         """Start the preview display thread"""
@@ -625,3 +689,4 @@ class WebCamCloneGUI:
 root = tk.Tk()
 my_gui = WebCamCloneGUI(root)
 root.mainloop()
+
