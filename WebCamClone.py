@@ -54,6 +54,12 @@ class WebCamClone:
         for backend in backends:
             cap = cv2.VideoCapture(camera_index, backend)
             if cap.isOpened():
+                # Ask the driver for the target output format to reduce per-frame scaling work.
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+                cap.set(cv2.CAP_PROP_FPS, self.fps)
+                if hasattr(cv2, "CAP_PROP_BUFFERSIZE"):
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 return cap
             cap.release()
         return None
@@ -236,27 +242,24 @@ class WebCamClone:
 
     def send_frame(self):
         if not self._initialized:
+            time.sleep(0.005)
             return
-            
+
+        frame_bgr = None
+
         if self.use_webcam:
             with self.cap_lock:
                 if self.cap is None:
+                    time.sleep(0.01)
                     return
                 ret, frame = self.cap.read()
             if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame = cv2.resize(frame, (self.width, self.height))
-                # Store current frame for preview
-                self.current_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                if self.isRecording:
-                    # write the frame to the output file
-                    self.out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-                self.cam.send(frame)
-                self.cam.sleep_until_next_frame()
+                frame_bgr = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
         else:
             frame = None
             with self.video_lock:
                 if self.video is None:
+                    time.sleep(0.01)
                     return
                 now = time.perf_counter()
                 should_advance = (
@@ -282,14 +285,21 @@ class WebCamClone:
                     frame = self.current_video_frame.copy()
 
             if frame is not None:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame = cv2.resize(frame, (self.width, self.height))
-                # Store current frame for preview
-                self.current_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                if self.isRecording:
-                    self.out.write(self.current_frame)
-                self.cam.send(frame)
-                self.cam.sleep_until_next_frame()
+                frame_bgr = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
+
+        if frame_bgr is None:
+            # Avoid busy-spinning when no frame is available.
+            time.sleep(0.005)
+            return
+
+        # Keep BGR for recording/preview, convert once for virtual cam send.
+        self.current_frame = frame_bgr
+        if self.isRecording and self.out is not None:
+            self.out.write(frame_bgr)
+
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        self.cam.send(frame_rgb)
+        self.cam.sleep_until_next_frame()
 
     def start_recording(self, filename):
         # define the codec and create a VideoWriter object

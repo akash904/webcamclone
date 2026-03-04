@@ -21,8 +21,9 @@ class WebCamCloneGUI:
 
         self.vc = None
         self.thread = None
-        self.preview_thread = None
         self.preview_running = False
+        self.preview_job = None
+        self.preview_interval_ms = 100  # 10 FPS preview to reduce CPU usage.
         self.always_on_top = False
         self.preview_width = 220
         self.preview_height = 165
@@ -541,42 +542,45 @@ class WebCamCloneGUI:
         return False
 
     def start_preview(self):
-        """Start the preview display thread"""
+        """Start preview updates on the Tk event loop."""
         if not self.preview_running and self.vc is not None:
             self.preview_running = True
-            self.preview_thread = Thread(target=self.update_preview)
-            self.preview_thread.daemon = True
-            self.preview_thread.start()
+            self.update_preview()
     
     def stop_preview(self):
         """Stop the preview display"""
         self.preview_running = False
-        if self.preview_thread is not None:
-            self.preview_thread.join()
-            self.preview_thread = None
+        self.preview_job = None
     
     def update_preview(self):
-        """Update the preview display with current frame"""
-        while self.preview_running and self.vc is not None:
-            try:
-                frame = self.vc.get_current_frame()
-                if frame is not None:
-                    # Resize frame for preview
-                    preview_frame = cv2.resize(frame, (self.preview_width, self.preview_height))
-                    # Mirror the frame horizontally (like a webcam mirror)
-                    preview_frame = cv2.flip(preview_frame, 1)
-                    # Convert BGR to RGB for PIL
-                    preview_frame = cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB)
-                    # Convert to PIL Image
-                    image = Image.fromarray(preview_frame)
-                    photo = ImageTk.PhotoImage(image)
-                    # Update the canvas
-                    self.preview_canvas.config(image=photo)
-                    self.preview_canvas.image = photo  # Keep a reference
-            except Exception as e:
-                print(f"Preview error: {e}")
-            # Update every 50ms (20 FPS)
-            self.master.after(50, lambda: None)
+        """Render one preview frame and schedule the next update."""
+        if not self.preview_running or self.vc is None:
+            self.preview_job = None
+            return
+
+        try:
+            frame = self.vc.get_current_frame()
+            if frame is not None:
+                preview_frame = cv2.resize(
+                    frame,
+                    (self.preview_width, self.preview_height),
+                    interpolation=cv2.INTER_AREA
+                )
+                # Mirror the frame horizontally (like a webcam mirror)
+                preview_frame = cv2.flip(preview_frame, 1)
+                # Convert BGR to RGB for PIL
+                preview_frame = cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB)
+                image = Image.fromarray(preview_frame)
+                photo = ImageTk.PhotoImage(image)
+                self.preview_canvas.config(image=photo)
+                self.preview_canvas.image = photo  # Keep a reference
+        except Exception as e:
+            print(f"Preview error: {e}")
+
+        if self.preview_running and self.vc is not None:
+            self.preview_job = self.master.after(self.preview_interval_ms, self.update_preview)
+        else:
+            self.preview_job = None
 
     def on_closing(self):
         # Prevent multiple close attempts
